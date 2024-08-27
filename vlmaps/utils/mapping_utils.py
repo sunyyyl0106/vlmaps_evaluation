@@ -474,6 +474,9 @@ def save_3d_map(
     occupied_ids: np.ndarray,
     mapped_iter_list: Set[int],
     grid_rgb: np.ndarray = None,
+    heldout_points = None,
+    heldout_gt = None,
+    lseg_preds = None,
 ) -> None:
     """Save 3D voxel map with features
 
@@ -500,6 +503,13 @@ def save_3d_map(
         f.create_dataset("occupied_ids", data=occupied_ids)
         if grid_rgb is not None:
             f.create_dataset("grid_rgb", data=grid_rgb)
+        if heldout_points is not None:
+            f.create_dataset("heldout_pos", data=heldout_points)
+        if heldout_gt is not None:
+            f.create_dataset("heldout_gt", data=heldout_gt)
+        if lseg_preds is not None:
+            f.create_dataset("lseg_preds", data=lseg_preds)
+
 
 
 def load_3d_map(map_path: str) -> Tuple[Set[int], np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -530,7 +540,15 @@ def load_3d_map(map_path: str) -> Tuple[Set[int], np.ndarray, np.ndarray, np.nda
         grid_rgb = None
         if "grid_rgb" in f:
             grid_rgb = f["grid_rgb"][:]
-        return mapped_iter_list, grid_feat, grid_pos, weight, occupied_ids, grid_rgb
+        if "heldout_pos" in f:
+            heldout_pos = f["heldout_pos"][:]
+        if "heldout_gt" in f:
+            heldout_gt = f["heldout_gt"][:]
+        if "lseg_preds" in f:
+            lseg_preds = f["lseg_preds"][:]
+        return (mapped_iter_list, grid_feat, grid_pos, 
+                weight, occupied_ids, grid_rgb, 
+                heldout_pos, heldout_gt, lseg_preds)
 
 
 d3_40_colors_rgb: np.ndarray = np.array(

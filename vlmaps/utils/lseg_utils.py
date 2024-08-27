@@ -93,8 +93,14 @@ def get_lseg_feat(
         logits_outputs = logits_outputs[:, :, :height, :width]
     # outputs = resize_image(outputs, h, w, **{'mode': 'bilinear', 'align_corners': True})
     # outputs = resize_image(outputs, image.shape[0], image.shape[1], **{'mode': 'bilinear', 'align_corners': True})
-    outputs = outputs.cpu()
-    outputs = outputs.numpy()  # B, D, H, W
+    #outputs = outputs.cpu()
+    #outputs = outputs.numpy()  # B, D, H, W
+    outputs = outputs.squeeze(0) # D, H, W
+    D = outputs.shape[0]
+    H = outputs.shape[1]
+    W = outputs.shape[2]
+    outputs = outputs.reshape(outputs.shape[0], -1) # D, H*W
+    outputs = outputs.T # H*W, D
     predicts = [torch.max(logit, 0)[1].cpu().numpy() for logit in logits_outputs]
     pred = predicts[0]
     if vis:
@@ -111,4 +117,4 @@ def get_lseg_feat(
         plt.tight_layout()
         plt.show()
 
-    return outputs
+    return outputs, D, H, W

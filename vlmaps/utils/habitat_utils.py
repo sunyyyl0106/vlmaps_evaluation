@@ -192,10 +192,16 @@ def save_obs(
             save_dir = root_save_dir / "semantic"
             os.makedirs(save_dir, exist_ok=True)
             save_path = save_dir / save_name
-            obs = observations["semantic_sensor"]
-            obs = cvt_obj_id_2_cls_id(obs, obj2cls)
+            semantic = observations["semantic_sensor"]
+            semantic_id = np.zeros_like(semantic, dtype=int)
+            for i in range(semantic.shape[0]):
+                for j in range(semantic.shape[1]):
+                    obj = semantic[i, j]
+                    id, _ = obj2cls.get(obj)
+                    semantic_id[i, j] = id
+                    
             with open(save_path, "wb") as f:
-                np.save(f, obs)
+                np.save(f, semantic_id)
 
 
 def get_obj2cls_dict(sim: habitat_sim.Simulator) -> Dict:

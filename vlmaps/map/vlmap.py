@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import sys
 import os
+sys.path.append("..")
+
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 import gdown
@@ -13,6 +16,7 @@ import numpy as np
 from omegaconf import DictConfig, OmegaConf
 from scipy.ndimage import binary_closing, binary_dilation, gaussian_filter
 import torch
+import torch.nn.functional as F
 
 from vlmaps.utils.clip_utils import get_text_feats_multiple_templates
 from vlmaps.utils.visualize_utils import pool_3d_label_to_2d
@@ -28,81 +32,166 @@ from vlmaps.utils.visualize_utils import pool_3d_label_to_2d
 #     segment_lseg_map,
 # )
 from vlmaps.map.vlmap_builder import VLMapBuilder
-from vlmaps.map.vlmap_builder_cam import VLMapBuilderCam
-from vlmaps.utils.mapping_utils import load_3d_map
+from vlmaps.utils.mapping_utils import load_3d_map, base_pos2grid_id_3d
 from vlmaps.map.map import Map
 from vlmaps.utils.index_utils import find_similar_category_id, get_segment_islands_pos, get_dynamic_obstacles_map_3d
 from vlmaps.utils.clip_utils import get_lseg_score
-
 
 class VLMap(Map):
     def __init__(self, map_config: DictConfig, data_dir: str = ""):
         super().__init__(map_config, data_dir=data_dir)
         self.scores_mat = None
         self.categories = None
+        self.heldout_pos = None
+        self.heldout_gt = None
+        self.lseg_preds = None
+
+        # TODO: check if needed
+        # map_path = os.path.join(map_dir, "grid_lseg_1.npy")
+        # self.map = load_map(map_path)
+        # self.map_cropped = self.map[self.xmin : self.xmax + 1, self.ymin : self.ymax + 1]
+        # self._init_clip()
+        # self._customize_obstacle_map(
+        #     map_config["potential_obstacle_names"],
+        #     map_config["obstacle_names"],
+        #     vis=False,
+        # )
+        # self.obstacles_new_cropped = Map._dilate_map(
+        #     self.obstacles_new_cropped == 0,
+        #     map_config["dilate_iter"],
+        #     map_config["gaussian_sigma"],
+        # )
+        # self.obstacles_new_cropped = self.obstacles_new_cropped == 0
+        # self.load_categories()
+        # print("a VLMap is created")
+        # pass
+    def get_miou(self, mp3dcat, heldout_pred):
+        print("calculate miou")
+        #calculate miou
+        iou_sum = 0.0
+        num = len(mp3dcat)
+        for category in range(len(mp3dcat)):
+            iou = 0
+            print("category: ", category)
+            intersection = np.sum(np.logical_and(heldout_pred == category, self.heldout_gt == category))
+            union = np.sum(np.logical_or(heldout_pred == category, self.heldout_gt == category))
+            
+            iou = intersection / (union + +1e-6)
+            print("inter: ", intersection)
+            print("union: ", union)
+            iou_sum += iou
+        mean_iou = iou_sum / num
+        return mean_iou
+    
+    
+    def evaluate_heldout(self, data_dir: str, mp3dcat):
+        os.makedirs(os.path.join(data_dir, 'vlmap_eva'), exist_ok=True)
+        inside_mask_path = os.path.join(os.path.join(data_dir, 'vlmap_eva'), f'inside_mask.pt')
+        
+        camera_height = self.map_config.pose_info.camera_height
+        cs = self.map_config.cell_size
+        gs = self.map_config.grid_size
+        vh = int(camera_height / cs)
+
+        self.load_map(data_dir)
+        self._init_clip()
+        scores_mat = self.init_categories(mp3dcat)
+        max_ids = np.argmax(scores_mat, axis=1)
+        print("max_ids.shape", max_ids.shape)
+        heldout_pred = []
+        count = 0
+        inside_mask = []
+
+        for i, p in enumerate(self.heldout_pos):
+            row, col, height = base_pos2grid_id_3d(gs, cs, p[0], p[1], p[2])
+            # if out of range
+            if col >= gs or row >= gs or height >= vh or col < 0 or row < 0 or height < 0:
+                inside_mask.append(False)
+            else:
+                inside_mask.append(True)
+
+        if not os.path.exists(inside_mask_path):
+            torch.save(torch.tensor(inside_mask), inside_mask_path)
+        
+        print("len(self.heldout_pos): ", len(self.heldout_pos))
+        self.heldout_pos = self.heldout_pos[inside_mask]
+        print("len(self.heldout_pos): ", len(self.heldout_pos))
+        self.heldout_gt = np.array(self.heldout_gt[inside_mask])
+        self.lseg_preds = np.array(self.lseg_preds[inside_mask])
+
+        # calculate accuracy
+        print("calculate accuracy")
+        for i, p in enumerate(self.heldout_pos):
+            row, col, height = base_pos2grid_id_3d(gs, cs, p[0], p[1], p[2])
+            # if out of range
+            # if col >= gs or row >= gs or height >= vh or col < 0 or row < 0 or height < 0:
+                # heldout_pred.append(0)
+                # count += 1
+                # continue
+            occupied_id = self.occupied_ids[row, col, height]
+            heldout_pred.append(max_ids[occupied_id])
+
+        heldout_pred = np.array(heldout_pred)
+        
+
+        #lseg_pred = self.get_lseg_pred(mp3dcat)
+        #lseg_pred = lseg_pred.cpu().numpy()
+
+        print("lseg_pred.shape: ", self.lseg_preds.shape)
+        print("heldout_pred.shape: ", heldout_pred.shape)
+        print("self.heldout_gt.shape: ", self.heldout_gt.shape)
+        
+        map_correct = np.sum(heldout_pred == self.heldout_gt)
+        map_total = self.heldout_gt.size
+        map_accuracy = map_correct / map_total
+
+        lseg_correct = np.sum(self.lseg_preds == self.heldout_gt)
+        lseg_total = self.heldout_gt.size
+        lseg_accuracy = lseg_correct / lseg_total
+
+        # heldout_pred is the prediction of map
+        map_miou = self.get_miou(mp3dcat, heldout_pred)
+        lseg_miou = self.get_miou(mp3dcat, self.lseg_preds)
+        print("count: ", count)
+        print("point_num: ", lseg_total)
+        return map_accuracy, map_miou, lseg_accuracy, lseg_miou
+
 
     def create_map(self, data_dir: Union[Path, str]) -> None:
         print(f"Creating map for scene at: ", data_dir)
         self._setup_paths(data_dir)
+        self.map_builder = VLMapBuilder(
+            self.data_dir,
+            self.map_config,
+            self.pose_path,
+            self.rgb_paths,
+            self.depth_paths,
+            self.base2cam_tf,
+            self.base_transform,
+            self.semantic_paths
+        )
         if self.map_config.pose_info.pose_type == "mobile_base":
-            self.map_builder = VLMapBuilder(
-                self.data_dir,
-                self.map_config,
-                self.pose_path,
-                self.rgb_paths,
-                self.depth_paths,
-                self.base2cam_tf,
-                self.base_transform,
-            )
             self.map_builder.create_mobile_base_map()
-        elif self.map_config.pose_info.pose_type == "camera_base":
-            self.map_builder = VLMapBuilderCam(
-                self.data_dir,
-                self.map_config,
-                self.pose_path,
-                self.rgb_paths,
-                self.depth_paths,
-                self.base2cam_tf,
-                self.base_transform,
-            )
+        elif self.map_config.pose_info.pose_type == "camera":
             self.map_builder.create_camera_map()
-        else:
-            raise ValueError("Invalid pose type")
 
     def load_map(self, data_dir: str) -> bool:
         self._setup_paths(data_dir)
-        print(self.data_dir)
-        if self.map_config.pose_info.pose_type == "mobile_base":
-            self.map_save_path = Path(data_dir) / "vlmap" / "vlmaps.h5df"
-            print(self.map_save_path)
-            if not self.map_save_path.exists():
-                assert False, "Loading VLMap failed because the file doesn't exist."
-            (
-                self.mapped_iter_list,
-                self.grid_feat,
-                self.grid_pos,
-                self.weight,
-                self.occupied_ids,
-                self.grid_rgb,
-            ) = load_3d_map(self.map_save_path)
-        elif self.map_config.pose_info.pose_type == "camera_base":
-            self.map_save_path = Path(data_dir) / "vlmap_cam" / "vlmaps_cam.h5df"
-            print(self.map_save_path)
-            if not self.map_save_path.exists():
-                assert False, "Loading VLMap failed because the file doesn't exist."
-            (
-                self.mapped_iter_list,
-                self.grid_feat,
-                self.grid_pos,
-                self.weight,
-                self.occupied_ids,
-                self.grid_rgb,
-                self.pcd_min,
-                self.pcd_max,
-                self.cs,
-            ) = VLMapBuilderCam.load_3d_map(self.map_save_path)
-        else:
-            raise ValueError("Invalid pose type")
+        self.map_save_path = Path(data_dir) / "vlmap_eva" / "vlmaps.h5df"
+        if not self.map_save_path.exists():
+            print("Loading VLMap failed because the file doesn't exist.")
+            return False
+        (
+            self.mapped_iter_list,
+            self.grid_feat,
+            self.grid_pos,
+            self.weight,
+            self.occupied_ids,
+            self.grid_rgb,
+            self.heldout_pos, 
+            self.heldout_gt,
+            self.lseg_preds,
+        ) = load_3d_map(self.map_save_path)
 
         return True
 
@@ -139,8 +228,11 @@ class VLMap(Map):
             self.grid_feat,
             self.clip_feat_dim,
             use_multiple_templates=True,
-            add_other=True,
+            add_other=False,
         )  # score for name and other
+
+        print("self.grid_feat.shape: ", self.grid_feat.shape)
+        print("self.scores_mat.shape: ", self.scores_mat.shape)
         return self.scores_mat
 
     def index_map(self, language_desc: str, with_init_cat: bool = True):

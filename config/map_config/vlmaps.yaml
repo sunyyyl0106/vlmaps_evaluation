@@ -33,3 +33,4 @@ obstacle_names:
   - "stairs"
   - "other"
 categories: "mp3d" # "mp3d", "ai2thor"
+pca_save_path: "/workspace/sda1/map/PCA/64/ipca_7.pkl"

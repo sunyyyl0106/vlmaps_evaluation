@@ -49,9 +49,14 @@ def generate_scene_data(save_dir: Union[Path, str], config: DictConfig, scene_pa
         agent_state = habitat_sim.AgentState()
         agent_state.position = pose[:3]
         agent_state.rotation = pose[3:]
-        sim.get_agent(0).set_state(agent_state)
-        obs = sim.get_sensor_observations(0)
+        agent.set_state(agent_state)
+        # Get agent state
+        agent_state = agent.get_state()
+        obs = sim.get_sensor_observations()
         save_obs(save_dir, sim_setting, obs, pose_i, obj2cls)
+
+
+        
 
     sim.close()
 
