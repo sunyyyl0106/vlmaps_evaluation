@@ -2,6 +2,7 @@ import sys
 import os
 sys.path.append("..")
 
+
 from pathlib import Path
 import hydra
 from omegaconf import DictConfig
@@ -20,8 +21,8 @@ def main(config: DictConfig) -> None:
     vlmap = VLMap(config.map_config)
     data_dir = Path(config.data_paths.vlmaps_data_dir)
     data_dirs = sorted([x for x in data_dir.iterdir() if x.is_dir()])
-    #vlmap.create_map(data_dirs[config.scene_id])
-    vlmap.load_map(data_dirs[config.scene_id])
+    vlmap.create_map(data_dirs[config.scene_id])
+    #vlmap.load_map(data_dirs[config.scene_id])
 
     result_dir = os.path.join(data_dirs[config.scene_id], 'heldout_result.txt')
 
@@ -40,17 +41,6 @@ def main(config: DictConfig) -> None:
 
 
     
-
-
-
-
-    
-
-        
-
-       
-        
-
 
 if __name__ == "__main__":
     main()
