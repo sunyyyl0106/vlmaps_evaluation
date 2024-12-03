@@ -55,9 +55,6 @@ def generate_scene_data(save_dir: Union[Path, str], config: DictConfig, scene_pa
         obs = sim.get_sensor_observations()
         save_obs(save_dir, sim_setting, obs, pose_i, obj2cls)
 
-
-        
-
     sim.close()
 
 

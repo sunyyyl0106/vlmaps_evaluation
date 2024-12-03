@@ -99,14 +99,17 @@ class VLMap(Map):
         max_ids = np.argmax(scores_mat, axis=1)
         print("max_ids.shape", max_ids.shape)
         heldout_pred = []
-        count = 0
+        count_false = 0
         inside_mask = []
+        count = 0
 
+        #np.save("/workspace/sdb1/vlmaps_data_dir/vlmaps_dataset/5LpN3gDmAk7_1/check_points/vlmap_all_heldout.npy", np.array(self.heldout_pos))
         for i, p in enumerate(self.heldout_pos):
             row, col, height = base_pos2grid_id_3d(gs, cs, p[0], p[1], p[2])
             # if out of range
             if col >= gs or row >= gs or height >= vh or col < 0 or row < 0 or height < 0:
                 inside_mask.append(False)
+                count += 1
             else:
                 inside_mask.append(True)
 
@@ -123,13 +126,12 @@ class VLMap(Map):
         print("calculate accuracy")
         for i, p in enumerate(self.heldout_pos):
             row, col, height = base_pos2grid_id_3d(gs, cs, p[0], p[1], p[2])
-            # if out of range
-            # if col >= gs or row >= gs or height >= vh or col < 0 or row < 0 or height < 0:
-                # heldout_pred.append(0)
-                # count += 1
-                # continue
             occupied_id = self.occupied_ids[row, col, height]
-            heldout_pred.append(max_ids[occupied_id])
+            if occupied_id == -1:
+                heldout_pred.append(-1)
+                count_false += 1
+            else:
+                heldout_pred.append(max_ids[occupied_id])
 
         heldout_pred = np.array(heldout_pred)
         
@@ -152,8 +154,9 @@ class VLMap(Map):
         # heldout_pred is the prediction of map
         map_miou = self.get_miou(mp3dcat, heldout_pred)
         lseg_miou = self.get_miou(mp3dcat, self.lseg_preds)
-        print("count: ", count)
+        print("count_false: ", count_false)
         print("point_num: ", lseg_total)
+        print("count: ", count)
         return map_accuracy, map_miou, lseg_accuracy, lseg_miou
 
 
@@ -227,6 +230,7 @@ class VLMap(Map):
             self.categories,
             self.grid_feat,
             self.clip_feat_dim,
+            #TODO: modified from True to False
             use_multiple_templates=True,
             add_other=False,
         )  # score for name and other

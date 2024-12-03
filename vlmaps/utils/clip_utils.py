@@ -200,7 +200,7 @@ def get_lseg_score(
     clip_feat_dim: int,
     use_multiple_templates: bool = False,
     avg_mode: int = 0,
-    add_other=True,
+    add_other=False,
 ):
     """
     Inputs:
