@@ -18,3 +18,4 @@ rgb.mp4
 depth.mp4
 outputs
 *.egg-info
+evaluation/time*.txt
